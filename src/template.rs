@@ -117,7 +117,10 @@ pub(crate) struct Template<'template> {
 }
 impl<'template> Template<'template> {
     /// Create a Template from the given template string.
-    pub fn compile(text: &'template str) -> Result<Template> {
+    pub fn compile(text: String) -> Result<Template<'template>> {
+        let text = Box::new(text);
+        let text: &'template str = Box::leak(text);
+
         Ok(Template {
             original_text: text,
             template_len: text.len(),
@@ -129,8 +132,8 @@ impl<'template> Template<'template> {
     pub fn render(
         &self,
         context: &Value,
-        template_registry: &HashMap<&str, Template>,
-        formatter_registry: &HashMap<&str, Box<ValueFormatter>>,
+        template_registry: &HashMap<String, Template>,
+        formatter_registry: &HashMap<String, Box<ValueFormatter>>,
         default_formatter: &ValueFormatter,
     ) -> Result<String> {
         // The length of the original template seems like a reasonable guess at the length of the
@@ -150,8 +153,8 @@ impl<'template> Template<'template> {
     pub fn render_into(
         &self,
         context: &Value,
-        template_registry: &HashMap<&str, Template>,
-        formatter_registry: &HashMap<&str, Box<ValueFormatter>>,
+        template_registry: &HashMap<String, Template>,
+        formatter_registry: &HashMap<String, Box<ValueFormatter>>,
         default_formatter: &ValueFormatter,
         output: &mut String,
     ) -> Result<()> {
@@ -162,18 +165,18 @@ impl<'template> Template<'template> {
         };
 
         while program_counter < self.instructions.len() {
-            match &self.instructions[program_counter] {
+            match self.instructions[program_counter] {
                 Instruction::Literal(text) => {
                     output.push_str(text);
                     program_counter += 1;
                 }
-                Instruction::Value(path) => {
+                Instruction::Value(ref path) => {
                     let first = path.first().unwrap();
                     if first.starts_with('@') {
                         // Currently we just hard-code the special @-keywords and have special
                         // lookup functions to use them because there are lifetime complexities with
                         // looking up values that don't live for as long as the given context object.
-                        let first: &str = &*first;
+                        let first: &str = first;
                         match first {
                             "@index" => {
                                 write!(output, "{}", render_context.lookup_index()?.0).unwrap()
@@ -197,7 +200,7 @@ impl<'template> Template<'template> {
                     }
                     program_counter += 1;
                 }
-                Instruction::FormattedValue(path, name) => {
+                Instruction::FormattedValue(ref path, name) => {
                     // The @ keywords aren't supported for formatted values. Should they be?
                     let value_to_render = render_context.lookup(path)?;
                     match formatter_registry.get(name) {
@@ -211,11 +214,11 @@ impl<'template> Template<'template> {
                     }
                     program_counter += 1;
                 }
-                Instruction::Branch(path, negate, target) => {
+                Instruction::Branch(ref path, negate, target) => {
                     let first = path.first().unwrap();
                     let mut truthy = if first.starts_with('@') {
-                        let first: &str = &*first;
-                        match &*first {
+                        let first: &str = first;
+                        match first {
                             "@index" => render_context.lookup_index()?.0 != 0,
                             "@first" => render_context.lookup_index()?.0 == 0,
                             "@last" => {
@@ -229,24 +232,24 @@ impl<'template> Template<'template> {
                         let value_to_render = render_context.lookup(path)?;
                         self.value_is_truthy(value_to_render, path)?
                     };
-                    if *negate {
+                    if negate {
                         truthy = !truthy;
                     }
 
                     if truthy {
-                        program_counter = *target;
+                        program_counter = target;
                     } else {
                         program_counter += 1;
                     }
                 }
-                Instruction::PushNamedContext(path, name) => {
+                Instruction::PushNamedContext(ref path, name) => {
                     let context_value = render_context.lookup(path)?;
                     render_context
                         .context_stack
                         .push(ContextElement::Named(name, context_value));
                     program_counter += 1;
                 }
-                Instruction::PushIterationContext(path, name) => {
+                Instruction::PushIterationContext(ref path, name) => {
                     // We push a context with an invalid index and no value and then wait for the
                     // following Iterate instruction to set the index and value properly.
                     let first = path.first().unwrap();
@@ -276,7 +279,7 @@ impl<'template> Template<'template> {
                     program_counter += 1;
                 }
                 Instruction::Goto(target) => {
-                    program_counter = *target;
+                    program_counter = target;
                 }
                 Instruction::Iterate(target) => {
                     match render_context.context_stack.last_mut() {
@@ -290,14 +293,14 @@ impl<'template> Template<'template> {
                                     program_counter += 1;
                                 }
                                 None => {
-                                    program_counter = *target;
+                                    program_counter = target;
                                 }
                             }
                         }
                         _ => panic!("Malformed program."),
                     };
                 }
-                Instruction::Call(template_name, path) => {
+                Instruction::Call(template_name, ref path) => {
                     let context_value = render_context.lookup(path)?;
                     match template_registry.get(template_name) {
                         Some(templ) => {
@@ -385,9 +388,9 @@ mod test {
         ::serde_json::to_value(&ctx).unwrap()
     }
 
-    fn other_templates() -> HashMap<&'static str, Template<'static>> {
+    fn other_templates() -> HashMap<String, Template<'static>> {
         let mut map = HashMap::new();
-        map.insert("my_macro", compile("{value}"));
+        map.insert("my_macro".to_string(), compile("{value}"));
         map
     }
 
@@ -398,9 +401,9 @@ mod test {
         Ok(())
     }
 
-    fn formatters() -> HashMap<&'static str, Box<ValueFormatter>> {
-        let mut map = HashMap::<&'static str, Box<ValueFormatter>>::new();
-        map.insert("my_formatter", Box::new(format));
+    fn formatters() -> HashMap<String, Box<ValueFormatter>> {
+        let mut map = HashMap::<_, Box<ValueFormatter>>::new();
+        map.insert("my_formatter".to_string(), Box::new(format));
         map
     }
 
@@ -791,7 +794,7 @@ mod test {
         let context = context();
         let template_registry = other_templates();
         let mut formatter_registry = formatters();
-        formatter_registry.insert("unescaped", Box::new(::format_unescaped));
+        formatter_registry.insert("unescaped".to_string(), Box::new(::format_unescaped));
         let string = template
             .render(
                 &context,
