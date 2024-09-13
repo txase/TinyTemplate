@@ -70,7 +70,7 @@ impl<'render, 'template> RenderContext<'render, 'template> {
                 }
             }
 
-            let step: &str = &*step;
+            let step: &str = step;
 
             match current.get(step) {
                 Some(next) => current = next,
@@ -95,7 +95,7 @@ impl<'render, 'template> RenderContext<'render, 'template> {
 
     /// Look up the root context object
     fn lookup_root(&self) -> Result<&'render Value> {
-        match self.context_stack.get(0) {
+        match self.context_stack.first() {
             Some(ContextElement::Object(obj)) => Ok(obj),
             Some(_) => {
                 panic!("Expected Object value at root of context stack, but was something else.")
@@ -262,7 +262,7 @@ impl<'template> Template<'template> {
                             render_context.context_stack.push(ContextElement::Iteration(
                                 name,
                                 &Value::Null,
-                                ::std::usize::MAX,
+                                usize::MAX,
                                 arr.len(),
                                 arr.iter(),
                             ))

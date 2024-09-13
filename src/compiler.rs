@@ -9,7 +9,7 @@ use error::{get_offset, Error, Result};
 use instruction::{Instruction, Path, PathStep};
 
 /// The end point of a branch or goto instruction is not known.
-const UNKNOWN: usize = ::std::usize::MAX;
+const UNKNOWN: usize = usize::MAX;
 
 /// The compiler keeps a stack of the open blocks so that it can ensure that blocks are closed in
 /// the right order. The Block type is a simple enumeration of the kinds of blocks that could be
@@ -171,7 +171,7 @@ impl<'template> TemplateCompiler<'template> {
                     if escaped && self.remaining_text.is_empty() {
                         return Err(self.parse_error(
                             text,
-                            "Found an escape that doesn't escape any character.".to_string()
+                            "Found an escape that doesn't escape any character.".to_string(),
                         ));
                     }
                 }
@@ -279,9 +279,7 @@ impl<'template> TemplateCompiler<'template> {
             self.remaining_text
         };
 
-        let mut position = search_substr
-            .find('{')
-            .unwrap_or_else(|| search_substr.len());
+        let mut position = search_substr.find('{').unwrap_or(search_substr.len());
         if escaped {
             position += 1;
         }
